@@ -60,7 +60,11 @@ jobs:
         githubToken: ${{ github.token }}
         run: |
           apt-get update
-          apt-get install -y build-essential libopenblas-dev git cmake
+          apt-get install -y build-essential libopenblas-dev git wget gnupg ca-certificates
+          wget -qO- "https://apt.kitware.com/keys/kitware-archive-latest.asc" | gpg --dearmor - | tee /usr/share/keyrings/kitware-archive-keyring.gpg >/dev/null
+          echo 'deb [signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg] https://apt.kitware.com/ubuntu/ jammy main' | tee /etc/apt/sources.list.d/kitware.list >/dev/null
+          apt-get update
+          apt-get install -y cmake
           git clone https://github.com/facebookresearch/faiss.git
           cd faiss
           git checkout ${{ inputs.faiss_version }}
@@ -115,8 +119,8 @@ jobs:
         $VCPKG_ROOT = "D:/vcpkg"
         git clone https://github.com/Microsoft/vcpkg.git $VCPKG_ROOT
         & "$VCPKG_ROOT/bootstrap-vcpkg.bat"
-        Write-Host "Installing OpenBLAS via vcpkg..."
-        & "$VCPKG_ROOT/vcpkg" install openblas:x64-windows --recurse
+        Write-Host "Installing OpenBLAS and LAPACK via vcpkg..."
+        & "$VCPKG_ROOT/vcpkg" install openblas:x64-windows lapack-reference:x64-windows --recurse
         
         # Set the CMAKE_TOOLCHAIN_FILE environment variable for subsequent steps
         $env:CMAKE_TOOLCHAIN_FILE = "$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
