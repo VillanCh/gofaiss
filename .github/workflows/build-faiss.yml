@@ -1,0 +1,140 @@
+name: Build Faiss Libraries
+
+on:
+  workflow_dispatch:
+    inputs:
+      faiss_version:
+        description: 'Faiss version to build (e.g., v1.11.0)'
+        required: true
+        default: 'v1.11.0'
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            arch: arm64
+            name: darwin-arm64
+          - os: ubuntu-latest
+            arch: amd64
+            name: linux-amd64
+          - os: ubuntu-latest
+            arch: arm64
+            name: linux-arm64
+          - os: windows-latest
+            arch: amd64
+            name: windows-amd64
+
+    runs-on: ${{ matrix.os }}
+    name: Build on ${{ matrix.name }}
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    #---------------------------------------------------
+    # Step 1: Set up build environment
+    #---------------------------------------------------
+    - name: Set up build environment (Linux)
+      if: runner.os == 'Linux'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential libopenblas-dev
+
+    - name: Set up build environment (macOS)
+      if: runner.os == 'macOS'
+      run: |
+        brew install libomp openblas
+
+    - name: Set up cross-compilation for Linux ARM64
+      if: matrix.name == 'linux-arm64'
+      uses: uraimo/run-on-arch-action@v2
+      with:
+        arch: aarch64
+        distro: ubuntu22.04
+        githubToken: ${{ github.token }}
+        run: |
+          # This block runs inside an ARM64 environment
+          apt-get update
+          apt-get install -y build-essential libopenblas-dev git cmake
+
+          # Clone Faiss inside the ARM64 environment
+          git clone https://github.com/facebookresearch/faiss.git
+          cd faiss
+          git checkout ${{ inputs.faiss_version }}
+
+          # Build Faiss
+          cmake . -B build \
+            -DFAISS_ENABLE_GPU=OFF \
+            -DBUILD_SHARED_LIBS=ON \
+            -DFAISS_ENABLE_PYTHON=OFF \
+            -DCMAKE_BUILD_TYPE=Release
+          cmake --build build -j 2
+          
+          # Install to a temporary directory
+          cmake --install build --prefix dist
+
+    #---------------------------------------------------
+    # Step 2: Build Faiss (for non-ARM64 Linux)
+    #---------------------------------------------------
+    - name: Clone and Build Faiss
+      if: matrix.name != 'linux-arm64'
+      run: |
+        git clone https://github.com/facebookresearch/faiss.git
+        cd faiss
+        git checkout ${{ inputs.faiss_version }}
+
+        # Configure with CMake
+        cmake . -B build `
+          -DFAISS_ENABLE_GPU=OFF `
+          -DBUILD_SHARED_LIBS=ON `
+          -DFAISS_ENABLE_PYTHON=OFF `
+          -DCMAKE_BUILD_TYPE=Release
+        
+        # Build
+        cmake --build build --config Release -j 2
+        
+        # Install to a temporary directory
+        cmake --install build --prefix dist
+      shell: bash
+
+    #---------------------------------------------------
+    # Step 3: Prepare Artifacts
+    #---------------------------------------------------
+    - name: Prepare Artifacts for Upload
+      run: |
+        # Create the directory structure for the artifact
+        mkdir -p artifact/faisslib/${{ inputs.faiss_version }}/${{ matrix.name }}
+        
+        # Define source path based on OS and architecture
+        if [[ "${{ matrix.name }}" == "linux-arm64" ]]; then
+          SOURCE_PATH="faiss/dist"
+        else
+          SOURCE_PATH="faiss/dist"
+        fi
+        
+        # Copy library files
+        if [[ "${{ runner.os }}" == "Linux" || "${{ runner.os }}" == "macOS" ]]; then
+          cp $SOURCE_PATH/lib/libfaiss.so* artifact/faisslib/${{ inputs.faiss_version }}/${{ matrix.name }}/ 2>/dev/null || true
+          cp $SOURCE_PATH/lib/libfaiss_c.so* artifact/faisslib/${{ inputs.faiss_version }}/${{ matrix.name }}/ 2>/dev/null || true
+          cp $SOURCE_PATH/lib/libfaiss.dylib* artifact/faisslib/${{ inputs.faiss_version }}/${{ matrix.name }}/ 2>/dev/null || true
+          cp $SOURCE_PATH/lib/libfaiss_c.dylib* artifact/faisslib/${{ inputs.faiss_version }}/${{ matrix.name }}/ 2>/dev/null || true
+        elif [[ "${{ runner.os }}" == "Windows" ]]; then
+          cp $SOURCE_PATH/bin/faiss.dll artifact/faisslib/${{ inputs.faiss_version }}/${{ matrix.name }}/
+          cp $SOURCE_PATH/bin/faiss_c.dll artifact/faisslib/${{ inputs.faiss_version }}/${{ matrix.name }}/
+          # Also copy the .lib file needed for linking on Windows
+          cp $SOURCE_PATH/lib/faiss.lib artifact/faisslib/${{ inputs.faiss_version }}/${{ matrix.name }}/
+          cp $SOURCE_PATH/lib/faiss_c.lib artifact/faisslib/${{ inputs.faiss_version }}/${{ matrix.name }}/
+        fi
+      shell: bash
+
+    #---------------------------------------------------
+    # Step 4: Upload Artifact
+    #---------------------------------------------------
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: faiss-libs-${{ matrix.name }}
+        path: artifact/ 
