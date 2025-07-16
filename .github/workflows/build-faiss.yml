@@ -70,6 +70,7 @@ jobs:
             -DFAISS_ENABLE_GPU=OFF \
             -DBUILD_SHARED_LIBS=ON \
             -DFAISS_ENABLE_PYTHON=OFF \
+            -DBUILD_TESTING=OFF \
             -DCMAKE_BUILD_TYPE=Release
           cmake --build build -j 2
           
@@ -86,12 +87,20 @@ jobs:
         cd faiss
         git checkout ${{ inputs.faiss_version }}
 
+        # Add platform-specific CMake flags
+        EXTRA_CMAKE_FLAGS=""
+        if [[ "${{ runner.os }}" == "macOS" ]]; then
+          EXTRA_CMAKE_FLAGS="-DOpenMP_ROOT=$(brew --prefix libomp)"
+        fi
+
         # Configure with CMake
         cmake . -B build \
           -DFAISS_ENABLE_GPU=OFF \
           -DBUILD_SHARED_LIBS=ON \
           -DFAISS_ENABLE_PYTHON=OFF \
-          -DCMAKE_BUILD_TYPE=Release
+          -DBUILD_TESTING=OFF \
+          -DCMAKE_BUILD_TYPE=Release \
+          $EXTRA_CMAKE_FLAGS
         
         # Build
         cmake --build build --config Release -j 2
