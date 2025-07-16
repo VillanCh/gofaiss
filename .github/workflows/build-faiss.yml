@@ -48,7 +48,10 @@ jobs:
       run: |
         brew install libomp openblas
 
-    - name: Set up cross-compilation for Linux ARM64
+    #---------------------------------------------------
+    # Step 2: Build Faiss
+    #---------------------------------------------------
+    - name: Set up and Build Faiss (Linux arm64)
       if: matrix.name == 'linux-arm64'
       uses: uraimo/run-on-arch-action@v2
       with:
@@ -56,16 +59,11 @@ jobs:
         distro: ubuntu22.04
         githubToken: ${{ github.token }}
         run: |
-          # This block runs inside an ARM64 environment
           apt-get update
           apt-get install -y build-essential libopenblas-dev git cmake
-
-          # Clone Faiss inside the ARM64 environment
           git clone https://github.com/facebookresearch/faiss.git
           cd faiss
           git checkout ${{ inputs.faiss_version }}
-
-          # Build Faiss
           cmake . -B build \
             -DFAISS_ENABLE_GPU=OFF \
             -DBUILD_SHARED_LIBS=ON \
@@ -73,41 +71,75 @@ jobs:
             -DBUILD_TESTING=OFF \
             -DCMAKE_BUILD_TYPE=Release
           cmake --build build -j 2
-          
-          # Install to a temporary directory
           cmake --install build --prefix dist
 
-    #---------------------------------------------------
-    # Step 2: Build Faiss (for non-ARM64 Linux)
-    #---------------------------------------------------
-    - name: Clone and Build Faiss
-      if: matrix.name != 'linux-arm64'
+    - name: Build Faiss (macOS)
+      if: matrix.name == 'darwin-arm64'
+      shell: bash
       run: |
         git clone https://github.com/facebookresearch/faiss.git
         cd faiss
         git checkout ${{ inputs.faiss_version }}
+        cmake . -B build \
+          -DOpenMP_ROOT=$(brew --prefix libomp) \
+          -DFAISS_ENABLE_GPU=OFF \
+          -DBUILD_SHARED_LIBS=ON \
+          -DFAISS_ENABLE_PYTHON=OFF \
+          -DBUILD_TESTING=OFF \
+          -DCMAKE_BUILD_TYPE=Release
+        cmake --build build --config Release -j 2
+        cmake --install build --prefix dist
 
-        # Add platform-specific CMake flags
-        EXTRA_CMAKE_FLAGS=""
-        if [[ "${{ runner.os }}" == "macOS" ]]; then
-          EXTRA_CMAKE_FLAGS="-DOpenMP_ROOT=$(brew --prefix libomp)"
-        fi
-
-        # Configure with CMake
+    - name: Build Faiss (Linux amd64)
+      if: matrix.name == 'linux-amd64'
+      shell: bash
+      run: |
+        git clone https://github.com/facebookresearch/faiss.git
+        cd faiss
+        git checkout ${{ inputs.faiss_version }}
         cmake . -B build \
           -DFAISS_ENABLE_GPU=OFF \
           -DBUILD_SHARED_LIBS=ON \
           -DFAISS_ENABLE_PYTHON=OFF \
           -DBUILD_TESTING=OFF \
-          -DCMAKE_BUILD_TYPE=Release \
-          $EXTRA_CMAKE_FLAGS
-        
-        # Build
+          -DCMAKE_BUILD_TYPE=Release
         cmake --build build --config Release -j 2
-        
-        # Install to a temporary directory
         cmake --install build --prefix dist
-      shell: bash
+
+    - name: Build Faiss (Windows amd64)
+      if: matrix.name == 'windows-amd64'
+      shell: pwsh
+      run: |
+        # Install OpenBLAS using vcpkg
+        Write-Host "Setting up vcpkg..."
+        $VCPKG_ROOT = "D:/vcpkg"
+        git clone https://github.com/Microsoft/vcpkg.git $VCPKG_ROOT
+        & "$VCPKG_ROOT/bootstrap-vcpkg.bat"
+        Write-Host "Installing OpenBLAS via vcpkg..."
+        & "$VCPKG_ROOT/vcpkg" install openblas:x64-windows --recurse
+        
+        # Set the CMAKE_TOOLCHAIN_FILE environment variable for subsequent steps
+        $env:CMAKE_TOOLCHAIN_FILE = "$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
+        Write-Host "CMAKE_TOOLCHAIN_FILE environment variable set to: $env:CMAKE_TOOLCHAIN_FILE"
+
+        Write-Host "Cloning Faiss..."
+        git clone https://github.com/facebookresearch/faiss.git
+        cd faiss
+        git checkout ${{ inputs.faiss_version }}
+        
+        Write-Host "Configuring Faiss with CMake..."
+        # CMake will automatically use the CMAKE_TOOLCHAIN_FILE environment variable
+        cmake . -B build `
+          -DFAISS_ENABLE_GPU=OFF `
+          -DBUILD_SHARED_LIBS=ON `
+          -DFAISS_ENABLE_PYTHON=OFF `
+          -DBUILD_TESTING=OFF `
+          -DCMAKE_BUILD_TYPE=Release
+        
+        Write-Host "Building Faiss..."
+        cmake --build build --config Release -j 2
+        Write-Host "Installing Faiss..."
+        cmake --install build --prefix dist
 
     #---------------------------------------------------
     # Step 3: Prepare Artifacts
@@ -118,11 +150,7 @@ jobs:
         mkdir -p artifact/faisslib/${{ inputs.faiss_version }}/${{ matrix.name }}
         
         # Define source path based on OS and architecture
-        if [[ "${{ matrix.name }}" == "linux-arm64" ]]; then
-          SOURCE_PATH="faiss/dist"
-        else
-          SOURCE_PATH="faiss/dist"
-        fi
+        SOURCE_PATH="faiss/dist"
         
         # Copy library files
         if [[ "${{ runner.os }}" == "Linux" || "${{ runner.os }}" == "macOS" ]]; then
