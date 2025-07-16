@@ -154,34 +154,46 @@ jobs:
     #---------------------------------------------------
     - name: Prepare Artifacts for Upload
       run: |
-        # Create the directory structure for the artifact
+        # Define paths
         ARTIFACT_DIR="artifact/faisslib/${{ inputs.faiss_version }}/${{ matrix.name }}"
-        mkdir -p "${ARTIFACT_DIR}"
-        
-        SOURCE_PATH="faiss/dist"
-        
-        # Copy header files (they should be present if build was successful)
-        if [ -d "$SOURCE_PATH/include/faiss" ]; then
-            mkdir -p "${ARTIFACT_DIR}/include"
-            cp -r $SOURCE_PATH/include/faiss "${ARTIFACT_DIR}/include/"
+        INSTALL_PATH="faiss/dist"
+        BUILD_PATH="faiss/build"
+        SOURCE_PATH="faiss"
+
+        # Create artifact structure
+        mkdir -p "${ARTIFACT_DIR}/include"
+        mkdir -p "${ARTIFACT_DIR}/faisscapi"
+        mkdir -p "${ARTIFACT_DIR}/lib"
+
+        # --- Copy Headers ---
+        # Copy main headers from the install directory (these are installed correctly)
+        if [ -d "${INSTALL_PATH}/include/faiss" ]; then
+          cp -r ${INSTALL_PATH}/include/faiss/* "${ARTIFACT_DIR}/include/"
+        fi
+        # Copy C-API headers from the source directory (these are not installed)
+        if [ -d "${SOURCE_PATH}/c_api" ]; then
+          cp ${SOURCE_PATH}/c_api/*.h "${ARTIFACT_DIR}/faisscapi/"
         fi
         
-        # Copy library files based on OS
+        # --- Copy Libraries ---
         if [[ "${{ runner.os }}" == "Linux" ]]; then
-          mkdir -p "${ARTIFACT_DIR}/lib"
-          cp $SOURCE_PATH/lib/libfaiss.so* "${ARTIFACT_DIR}/lib/"
-          cp $SOURCE_PATH/lib/libfaiss_c.so* "${ARTIFACT_DIR}/lib/"
+          # Copy main lib from install dir
+          cp ${INSTALL_PATH}/lib/libfaiss.so* "${ARTIFACT_DIR}/lib/"
+          # Copy C-API lib from build dir (workaround for install issue)
+          cp ${BUILD_PATH}/c_api/libfaiss_c.so* "${ARTIFACT_DIR}/lib/"
         elif [[ "${{ runner.os }}" == "macOS" ]]; then
-          mkdir -p "${ARTIFACT_DIR}/lib"
-          cp $SOURCE_PATH/lib/libfaiss.dylib* "${ARTIFACT_DIR}/lib/"
-          cp $SOURCE_PATH/lib/libfaiss_c.dylib* "${ARTIFACT_DIR}/lib/"
+          # Copy main lib from install dir
+          cp ${INSTALL_PATH}/lib/libfaiss.dylib* "${ARTIFACT_DIR}/lib/"
+          # Copy C-API lib from build dir (workaround for install issue)
+          cp ${BUILD_PATH}/c_api/libfaiss_c.dylib* "${ARTIFACT_DIR}/lib/"
         elif [[ "${{ runner.os }}" == "Windows" ]]; then
           mkdir -p "${ARTIFACT_DIR}/bin"
-          mkdir -p "${ARTIFACT_DIR}/lib"
-          cp $SOURCE_PATH/bin/faiss.dll "${ARTIFACT_DIR}/bin/"
-          cp $SOURCE_PATH/bin/faiss_c.dll "${ARTIFACT_DIR}/bin/"
-          cp $SOURCE_PATH/lib/faiss.lib "${ARTIFACT_DIR}/lib/"
-          cp $SOURCE_PATH/lib/faiss_c.lib "${ARTIFACT_DIR}/lib/"
+          # Copy main lib from install dir
+          cp ${INSTALL_PATH}/bin/faiss.dll "${ARTIFACT_DIR}/bin/"
+          cp ${INSTALL_PATH}/lib/faiss.lib "${ARTIFACT_DIR}/lib/"
+          # Copy C-API lib from build dir (workaround for install issue)
+          cp ${BUILD_PATH}/c_api/Release/faiss_c.dll "${ARTIFACT_DIR}/bin/"
+          cp ${BUILD_PATH}/c_api/Release/faiss_c.lib "${ARTIFACT_DIR}/lib/"
         fi
       shell: bash
 
