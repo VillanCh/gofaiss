@@ -87,10 +87,10 @@ jobs:
         git checkout ${{ inputs.faiss_version }}
 
         # Configure with CMake
-        cmake . -B build `
-          -DFAISS_ENABLE_GPU=OFF `
-          -DBUILD_SHARED_LIBS=ON `
-          -DFAISS_ENABLE_PYTHON=OFF `
+        cmake . -B build \
+          -DFAISS_ENABLE_GPU=OFF \
+          -DBUILD_SHARED_LIBS=ON \
+          -DFAISS_ENABLE_PYTHON=OFF \
           -DCMAKE_BUILD_TYPE=Release
         
         # Build
